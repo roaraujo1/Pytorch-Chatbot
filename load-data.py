@@ -7,17 +7,19 @@ from openai import OpenAI  # FIX: Import OpenAI client class
 load_dotenv()
 
 # FIX: Use descriptive name (not just 'client')
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
+chroma_client = chromadb.PersistentClient(path="./chroma_db") #this is the database and the path is were it is being loaded, this saves onto the path so if something exists it will be loaded
 pytorch_collection = chroma_client.get_or_create_collection(
     name="pytorch-docs"
 ) 
 
 data_dir = "./data"
+
 documents = []
 metadatas = []
 ids = []
 
 for filename in os.listdir(data_dir):
+    print(filename)
     if filename.endswith('txt'):
         filepath = os.path.join(data_dir, filename)
 
@@ -28,11 +30,16 @@ for filename in os.listdir(data_dir):
         metadatas.append({"source": filename})
         ids.append(filename.replace('.txt', ''))
 
-pytorch_collection.add(
-    documents=documents,
-    metadatas=metadatas,
-    ids=ids
-)
+if pytorch_collection.count() == 0:
+    pytorch_collection.add(
+        documents=documents,
+        metadatas=metadatas,
+        ids=ids
+    )
+    print(f"Added {len(documents)} documents to collection")
+else:
+    print(f"Collection already has {pytorch_collection.count()} documents, skipping load")
+
 print(f"Added {len(documents)} documents to collection")
 
 user_query = "what is the most frequently used algorithm in back propagation?"
