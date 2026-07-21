@@ -43,20 +43,17 @@ def load_pyTorch_data():
     print(f"Added {len(documents)} documents to collection")
     return pytorch_collection
 
-
+pytorchData = load_pyTorch_data()
 
 app = FastAPI()
 @app.post("/ask")
-async def ask():
+async def ask(question: str):
     
-    pytorchData = load_pyTorch_data()
+    
    
-
-    user_query = "what is the most frequently used algorithm in back propagation?"
-
     # FIX: Access the nested result correctly
     query_results = pytorchData.query(
-        query_texts=[user_query],
+        query_texts=[question],
         n_results=1
     )
     context = query_results['documents'][0][0]  # FIX: Added extra [0]
@@ -66,7 +63,7 @@ async def ask():
     # FIX: Create OpenAI client with correct name and syntax
     openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # FIX: Pass variable NAME not value
 
-    prompt = f"{user_query}. Use this as context for answering: {context}"
+    prompt = f"{question}. Use this as context for answering: {context}"
 
     # FIX: Use the correct client
     response = openai_client.chat.completions.create(  # FIX: Changed from 'client' to 'openai_client'
