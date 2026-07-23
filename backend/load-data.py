@@ -1,5 +1,7 @@
-import chromadb 
+import chromadb
+import uvicorn 
 import os
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv  # FIX: Import dotenv
 from openai import OpenAI  # FIX: Import OpenAI client class
 from fastapi import FastAPI
@@ -46,6 +48,17 @@ def load_pyTorch_data():
 pytorchData = load_pyTorch_data()
 
 app = FastAPI()
+origins = [
+    "http://localhost:3000"
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins = origins,
+    allow_credentials = True,
+    allow_methods =["*"],
+    allow_headers=["*"],
+
+)
 @app.post("/ask")
 async def ask(question: str):
     
