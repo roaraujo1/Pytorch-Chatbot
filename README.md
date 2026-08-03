@@ -104,6 +104,3 @@ The app will be available at `http://localhost:5173`.
 - Automated re-ingestion when new docs are added to `data/`
 - Basic tests for the `/ask` endpoint
 
-## License
-
-MIT
