@@ -2,7 +2,7 @@
 
 A retrieval-augmented Q&A chatbot that answers questions about PyTorch using its official documentation. Built with a FastAPI + ChromaDB backend and a React (Vite) frontend.
 
-Ask a question in plain English (e.g. _"How do I create a custom Dataset class in PyTorch?"_) and the app retrieves the most relevant passage from the PyTorch docs, feeds it to an LLM as context, and returns a grounded, conversational answer — instead of relying purely on the model's training data.
+Ask a question in plain English (e.g. *"How do I create a custom Dataset class in PyTorch?"*) and the app retrieves the most relevant passage from the PyTorch docs, feeds it to an LLM as context, and returns a grounded, conversational answer — instead of relying purely on the model's training data.
 
 ## How it works
 
