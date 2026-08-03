@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv  # FIX: Import dotenv
 from openai import OpenAI  # FIX: Import OpenAI client class
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 def load_pyTorch_data():
     load_dotenv()
@@ -49,7 +50,7 @@ pytorchData = load_pyTorch_data()
 
 app = FastAPI()
 origins = [
-    "http://localhost:3000"
+    "http://localhost:5173"
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -59,14 +60,14 @@ app.add_middleware(
     allow_headers=["*"],
 
 )
+class QuestionRequest(BaseModel):
+    question:str
+
 @app.post("/ask")
-async def ask(question: str):
+async def ask(req: QuestionRequest):
     
-    
-   
-    # FIX: Access the nested result correctly
     query_results = pytorchData.query(
-        query_texts=[question],
+        query_texts=[req.question],
         n_results=1
     )
     context = query_results['documents'][0][0]  # FIX: Added extra [0]
@@ -76,7 +77,7 @@ async def ask(question: str):
     # FIX: Create OpenAI client with correct name and syntax
     openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # FIX: Pass variable NAME not value
 
-    prompt = f"{question}. Use this as context for answering: {context}"
+    prompt = f"{req.question}. Use this as context for answering: {context}"
 
     # FIX: Use the correct client
     response = openai_client.chat.completions.create(  # FIX: Changed from 'client' to 'openai_client'
