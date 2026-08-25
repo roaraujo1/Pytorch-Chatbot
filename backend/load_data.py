@@ -1,37 +1,52 @@
 import chromadb
 import uvicorn 
 import os
+
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv  # FIX: Import dotenv
 from openai import OpenAI  # FIX: Import OpenAI client class
 from fastapi import FastAPI
 from pydantic import BaseModel
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+
 
 def load_pyTorch_data():
     load_dotenv()
-
+    #this persistent client is saving to disk
     chroma_client = chromadb.PersistentClient(path="./chroma_db") #this is the database and the path is were it is being loaded, this saves onto the path so if something exists it will be loaded
     pytorch_collection = chroma_client.get_or_create_collection(
         name="pytorch-docs"
     ) 
 
     data_dir = "./data"
+    
 
     documents = []
     metadatas = []
     ids = []
 
+    splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=50,
+    separators=["\n\n", "\n", ". ", " "]
+)
+
+    
     for filename in os.listdir(data_dir):
-        print(filename)
+        
+       
         if filename.endswith('txt'):
             filepath = os.path.join(data_dir, filename)
 
             with open(filepath, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            documents.append(content)
-            metadatas.append({"source": filename})
-            ids.append(filename.replace('.txt', ''))
+                content = splitter.split_text(f.read())
+                for i in range(len(content)):
+                    documents.append(content[i])
+                    metadatas.append({"source": filename, "chunk": i})
+                    ids.append(f"{filename.replace('.txt', '')}_chunk_{i}")
+   
+
 
     if pytorch_collection.count() == 0:
         pytorch_collection.add(
@@ -71,8 +86,7 @@ async def ask(req: QuestionRequest):
         n_results=1
     )
     context = query_results['documents'][0][0]  # FIX: Added extra [0]
-
-    print(f"Retrieved context (first 200 chars): {context[:200]}")
+    
 
     # FIX: Create OpenAI client with correct name and syntax
     openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # FIX: Pass variable NAME not value
@@ -89,5 +103,5 @@ async def ask(req: QuestionRequest):
     )
 
     answer = response.choices[0].message.content
-    print(f"\nAnswer: {answer}")
+   
     return {"answer": answer}
