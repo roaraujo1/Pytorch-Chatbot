@@ -1,0 +1,68 @@
+# Source: https://pytorch.org/tutorials/beginner/onnx/export_simple_model_to_onnx_tutorial.html
+# Title: Exporting Models to ONNX
+# Last Verified: Nov 05, 2024
+
+Exporting Models to ONNX
+
+ONNX (Open Neural Network Exchange) is an open standard format for representing machine learning models, designed to allow models trained in one framework (such as PyTorch) to be run in a different runtime or framework (such as ONNX Runtime, TensorRT, or a mobile inference engine), without needing PyTorch installed on the deployment target.
+
+Basic Export
+
+import torch
+
+model = MyModel()
+model.eval()
+
+dummy_input = torch.randn(1, 3, 224, 224)
+
+torch.onnx.export(
+    model,
+    dummy_input,
+    "model.onnx",
+    input_names=["input"],
+    output_names=["output"],
+    opset_version=17
+)
+
+Similar to torch.jit.trace, the standard ONNX export process runs the model once with dummy_input and traces the resulting operations, meaning it inherits the same limitation around data-dependent control flow: an if statement that branches on a tensor value will only export the branch taken during the export call.
+
+Dynamic Axes
+
+By default, the exported ONNX model assumes a fixed input shape, matching whatever shape dummy_input had. In practice, most deployment scenarios need to support variable batch sizes or, for some models, variable sequence lengths. This is handled with the dynamic_axes argument.
+
+torch.onnx.export(
+    model,
+    dummy_input,
+    "model.onnx",
+    input_names=["input"],
+    output_names=["output"],
+    dynamic_axes={
+        "input": {0: "batch_size"},
+        "output": {0: "batch_size"}
+    }
+)
+
+Without specifying dynamic_axes, attempting to run inference with a batch size different from the one used during export will typically fail or silently produce incorrect results, depending on the runtime.
+
+Verifying the Export
+
+It's good practice to verify that the ONNX model produces the same output as the original PyTorch model on the same input, since export bugs can be subtle and don't always raise an error.
+
+import onnxruntime as ort
+import numpy as np
+
+ort_session = ort.InferenceSession("model.onnx")
+
+pytorch_output = model(dummy_input).detach().numpy()
+onnx_output = ort_session.run(None, {"input": dummy_input.numpy()})[0]
+
+np.testing.assert_allclose(pytorch_output, onnx_output, rtol=1e-03, atol=1e-05)
+print("PyTorch and ONNX outputs match within tolerance")
+
+Common Export Failures
+
+Operations that have no direct ONNX equivalent, or that behave differently in ONNX's execution model, are a frequent source of export errors or silent correctness bugs. Custom autograd Functions, certain in-place operations, and some newer PyTorch operators may not be supported by a given opset_version, requiring either a workaround in the model code or an upgrade to a newer opset version that does support the operation. When an export fails, the error message typically identifies the specific unsupported operator, which is the starting point for finding either an ONNX-compatible alternative or a custom ONNX operator registration.
+
+Why Export Instead of Using PyTorch Directly in Production
+
+Even though PyTorch models can technically be served directly in production via a Python web server, exporting to ONNX (or TorchScript) is common because it decouples the serving environment from the training environment, allows the use of highly optimized C++ inference runtimes, and enables deployment to environments where Python itself may not be available or desirable, such as many mobile and embedded platforms.

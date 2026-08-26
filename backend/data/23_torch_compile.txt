@@ -1,0 +1,49 @@
+# Source: https://pytorch.org/tutorials/intermediate/torch_compile_tutorial.html
+# Title: Speeding Up Models with torch.compile
+# Last Verified: Nov 05, 2024
+
+torch.compile
+
+torch.compile is a PyTorch feature, introduced in PyTorch 2.0, that can significantly speed up model training and inference by JIT-compiling PyTorch code into optimized kernels, often with a single line of code and no changes to the model itself.
+
+Basic Usage
+
+import torch
+
+model = MyModel().to("cuda")
+compiled_model = torch.compile(model)
+
+# training loop looks identical to the uncompiled version
+for data, target in train_dataloader:
+    output = compiled_model(data)
+    loss = loss_fn(output, target)
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+
+How It Works (High Level)
+
+torch.compile uses a component called TorchDynamo to trace and capture the Python bytecode of the model's forward method into a computation graph, then hands that graph off to a backend compiler (by default, TorchInductor) which generates optimized, fused GPU kernels. Because compilation happens at the level of captured graphs rather than the whole Python program, torch.compile can handle much more general Python code, including some data-dependent control flow, than the older TorchScript scripting approach.
+
+First-Run Compilation Overhead
+
+The first time a compiled model is called with a given set of input shapes, torch.compile spends extra time analyzing and compiling the code, which can make the very first batch (or first few batches, if input shapes vary) noticeably slower than an uncompiled model. Subsequent calls with the same input shape reuse the compiled kernels and run significantly faster. This means torch.compile's benefits are most pronounced in long training runs where the one-time compilation cost is amortized over many iterations, and less beneficial for very short scripts or highly variable input shapes.
+
+Choosing a Mode
+
+torch.compile accepts a mode argument that trades off compilation time against runtime performance:
+
+compiled_model = torch.compile(model, mode="reduce-overhead")
+# other options: "default", "max-autotune"
+
+"reduce-overhead" is well suited to models with many small operations, since it reduces Python-level overhead between kernel launches. "max-autotune" spends significantly more time at compile time searching for the fastest possible kernels, which can be worthwhile for long production training runs but is often too slow to iterate with during development.
+
+Graph Breaks
+
+Not all Python code can be captured into a single graph; when TorchDynamo encounters code it cannot trace (certain unsupported operations, print statements, or complex control flow), it inserts a "graph break," falling back to regular eager-mode execution for that portion of the code before resuming compilation afterward. A model with many graph breaks may see much smaller speedups than expected, since the compiled portions become smaller and more fragmented.
+
+torch._dynamo.explain(model)(example_input)  # can help diagnose graph breaks
+
+Compatibility Notes
+
+torch.compile is generally compatible with existing training loops, custom loss functions, and most standard layers, but certain dynamic or unusual patterns (heavy use of Python-level control flow based on tensor values, certain third-party libraries) can reduce its effectiveness or cause it to fall back to eager execution for large portions of the model. When debugging unexpectedly small speedups, checking for graph breaks is usually the first step.

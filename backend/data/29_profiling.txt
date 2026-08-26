@@ -1,0 +1,73 @@
+# Source: https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html
+# Title: Profiling PyTorch Models with torch.profiler
+# Last Verified: Nov 05, 2024
+
+Profiling PyTorch Models with torch.profiler
+
+When a training loop or inference pipeline is slower than expected, guessing at the bottleneck is unreliable; torch.profiler provides detailed, measured information about where time and memory are actually being spent, broken down by individual operation.
+
+Basic Profiling
+
+import torch
+from torch.profiler import profile, record_function, ProfilerActivity
+
+model = MyModel().to("cuda")
+input_tensor = torch.randn(32, 3, 224, 224).to("cuda")
+
+with profile(
+    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    record_shapes=True
+) as prof:
+    with record_function("model_inference"):
+        model(input_tensor)
+
+print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+
+This produces a table showing which operations (e.g. specific convolution or linear layer calls) consumed the most CPU and GPU time, which is typically the first place to look when diagnosing unexpectedly slow inference.
+
+Profiling a Full Training Loop
+
+Profiling an entire training run naively (every single step) produces an enormous amount of data and significant overhead; the profiler supports a scheduling API to profile only a limited window of steps, which is generally the more practical approach.
+
+from torch.profiler import schedule
+
+my_schedule = schedule(wait=1, warmup=1, active=3, repeat=1)
+
+with profile(
+    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    schedule=my_schedule,
+    on_trace_ready=torch.profiler.tensorboard_trace_handler("./log/profiler")
+) as prof:
+    for step, (data, target) in enumerate(train_dataloader):
+        if step >= 6:
+            break
+        output = model(data.to("cuda"))
+        loss = loss_fn(output, target.to("cuda"))
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+        prof.step()
+
+The wait, warmup, and active parameters control which steps are actually recorded: the first wait steps are skipped entirely, the next warmup steps are profiled but discarded (to avoid measuring one-time initialization costs), and the following active steps are the ones actually recorded and analyzed.
+
+Memory Profiling
+
+The profiler can also track memory allocation, which is useful for diagnosing out-of-memory errors or unexpectedly high memory usage.
+
+with profile(
+    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    profile_memory=True
+) as prof:
+    model(input_tensor)
+
+print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=10))
+
+Visualizing with TensorBoard
+
+Traces saved via tensorboard_trace_handler can be viewed in TensorBoard's dedicated profiler plugin, which shows a timeline view of operations across CPU and GPU, making it easier to spot patterns like GPU idle time waiting on CPU-bound data loading, a very common real-world bottleneck that's difficult to diagnose from the summary table alone.
+
+tensorboard --logdir=./log/profiler
+
+Common Findings
+
+A frequent discovery when first profiling a training loop is that the GPU is idle a significant fraction of the time, waiting for the CPU to finish loading and preprocessing the next batch of data. This is typically addressed by increasing the DataLoader's num_workers, enabling pin_memory=True, or moving expensive preprocessing (like image decoding or heavy transforms) off the critical path, rather than by trying to optimize the model's forward or backward pass itself, which may not be the actual bottleneck at all.

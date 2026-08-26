@@ -1,0 +1,57 @@
+# Source: https://pytorch.org/docs/stable/nn.init.html
+# Title: Weight Initialization
+# Last Verified: Nov 05, 2024
+
+Weight Initialization
+
+How a neural network's weights are initialized before training begins can significantly affect how quickly, or whether, the network converges. Poor initialization can lead to vanishing or exploding gradients, especially in deep networks.
+
+Default Initialization
+
+PyTorch layers like nn.Linear and nn.Conv2d come with sensible default initializations (typically a variant of Kaiming/He initialization for ReLU-based networks), so in many cases no manual initialization is required. However, understanding how to customize initialization is important for research, unusual architectures, or debugging training instability.
+
+torch.nn.init Module
+
+The torch.nn.init module provides several standard initialization schemes as in-place functions.
+
+import torch
+import torch.nn as nn
+
+linear = nn.Linear(128, 64)
+
+# Xavier/Glorot initialization - good default for layers followed by tanh or sigmoid
+nn.init.xavier_uniform_(linear.weight)
+nn.init.zeros_(linear.bias)
+
+# Kaiming/He initialization - good default for layers followed by ReLU
+nn.init.kaiming_normal_(linear.weight, nonlinearity='relu')
+
+Applying Initialization Across a Model
+
+A common pattern is to define a function that initializes each layer type appropriately, then apply it recursively to every submodule using model.apply().
+
+def init_weights(module):
+    if isinstance(module, nn.Linear):
+        nn.init.kaiming_normal_(module.weight, nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.Conv2d):
+        nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+    elif isinstance(module, nn.BatchNorm2d):
+        nn.init.ones_(module.weight)
+        nn.init.zeros_(module.bias)
+
+model = nn.Sequential(nn.Linear(10, 20), nn.ReLU(), nn.Linear(20, 5))
+model.apply(init_weights)
+
+Why Initialization Matters
+
+If weights are initialized too large, activations and gradients can grow exponentially as they pass through many layers (exploding gradients). If weights are initialized too small, activations and gradients can shrink toward zero (vanishing gradients), effectively halting learning in early layers of a deep network. Xavier initialization is derived to keep the variance of activations roughly constant across layers assuming linear or tanh-like activations; Kaiming initialization adjusts this derivation to account for the fact that ReLU zeroes out roughly half of its inputs.
+
+Initializing from a Pretrained Model
+
+Rather than random initialization, it's extremely common in practice to initialize some or all of a model's weights from a pretrained checkpoint (transfer learning), which is discussed further in the section on transfer learning. This is typically the strongest starting point when a suitable pretrained model exists, and is generally preferred over training from random initialization when data is limited.
+
+Debugging Initialization Issues
+
+If a model's loss is NaN within the first few training steps, before any reasonable amount of learning could plausibly have gone wrong, initialization is one of the first things to suspect, along with learning rate. Printing the mean and standard deviation of each layer's weights immediately after initialization, and again after the first forward pass, can help identify whether values are already too large or too small before training has meaningfully begun.

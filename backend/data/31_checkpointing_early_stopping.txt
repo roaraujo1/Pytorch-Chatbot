@@ -1,0 +1,82 @@
+# Source: https://pytorch.org/tutorials/recipes/recipes/saving_and_loading_a_general_checkpoint.html
+# Title: Checkpointing and Early Stopping
+# Last Verified: Nov 05, 2024
+
+Checkpointing and Early Stopping
+
+Long training runs are vulnerable to interruption (crashes, preemption on shared clusters, or simply wanting to stop and resume later), and are also prone to overfitting if allowed to run for too many epochs. Checkpointing and early stopping are two closely related practices that address these problems.
+
+Saving Checkpoints During Training
+
+A checkpoint typically includes not just the model's weights, but also the optimizer state, the current epoch number, and the scheduler state, so training can be resumed exactly where it left off rather than restarting from scratch.
+
+import torch
+
+def save_checkpoint(model, optimizer, scheduler, epoch, best_val_loss, path):
+    torch.save({
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": scheduler.state_dict(),
+        "best_val_loss": best_val_loss,
+    }, path)
+
+def load_checkpoint(path, model, optimizer, scheduler):
+    checkpoint = torch.load(path, weights_only=True)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+    return checkpoint["epoch"], checkpoint["best_val_loss"]
+
+Saving the Best Model vs. the Latest Model
+
+It's common practice to maintain two separate checkpoints: one that's overwritten with the most recent epoch (useful for resuming after a crash) and one that's only updated when validation performance improves (useful for actually deploying the best-performing version of the model, which is not necessarily the model from the final epoch).
+
+best_val_loss = float("inf")
+
+for epoch in range(num_epochs):
+    train_one_epoch(model, optimizer, train_dataloader)
+    val_loss = validate(model, val_dataloader)
+    scheduler.step()
+
+    save_checkpoint(model, optimizer, scheduler, epoch, best_val_loss, "checkpoint_latest.pt")
+
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        save_checkpoint(model, optimizer, scheduler, epoch, best_val_loss, "checkpoint_best.pt")
+
+Early Stopping
+
+Early stopping halts training once validation performance stops improving for a set number of consecutive epochs (the "patience"), rather than training for a fixed, predetermined number of epochs regardless of whether the model is still improving. This helps prevent overfitting and saves compute.
+
+class EarlyStopping:
+    def __init__(self, patience=10, min_delta=0.0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.best_loss = float("inf")
+        self.counter = 0
+
+    def should_stop(self, val_loss):
+        if val_loss < self.best_loss - self.min_delta:
+            self.best_loss = val_loss
+            self.counter = 0
+            return False
+        else:
+            self.counter += 1
+            return self.counter >= self.patience
+
+early_stopping = EarlyStopping(patience=10)
+
+for epoch in range(num_epochs):
+    train_one_epoch(model, optimizer, train_dataloader)
+    val_loss = validate(model, val_dataloader)
+
+    if early_stopping.should_stop(val_loss):
+        print(f"Early stopping triggered at epoch {epoch}")
+        break
+
+Choosing patience and min_delta
+
+A small patience risks stopping training prematurely due to normal epoch-to-epoch noise in validation loss, while a very large patience defeats much of the purpose of early stopping in the first place. min_delta guards against stopping (or resetting the patience counter) due to negligibly small, noise-level improvements that aren't meaningfully better. Both values are typically tuned empirically for a given dataset and model, rather than set to a single universally correct default.
+
+A subtle but important point: when resuming training from a checkpoint after a crash, the early-stopping counter and best validation loss should also be restored from the checkpoint, not reset to their initial values, or the early stopping logic will behave inconsistently across the interruption.

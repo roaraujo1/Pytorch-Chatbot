@@ -1,7 +1,6 @@
 import chromadb
 import uvicorn 
 import os
-
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv  # FIX: Import dotenv
 from openai import OpenAI  # FIX: Import OpenAI client class
@@ -35,7 +34,6 @@ def load_pyTorch_data():
     
     for filename in os.listdir(data_dir):
         
-       
         if filename.endswith('txt'):
             filepath = os.path.join(data_dir, filename)
 
@@ -46,7 +44,6 @@ def load_pyTorch_data():
                     metadatas.append({"source": filename, "chunk": i})
                     ids.append(f"{filename.replace('.txt', '')}_chunk_{i}")
    
-
 
     if pytorch_collection.count() == 0:
         pytorch_collection.add(

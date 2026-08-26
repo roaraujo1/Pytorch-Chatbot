@@ -1,0 +1,78 @@
+# Source: https://pytorch.org/docs/stable/generated/torch.nn.LSTM.html
+# Title: Recurrent Layers: RNN, LSTM, and GRU
+# Last Verified: Nov 05, 2024
+
+Recurrent Layers: RNN, LSTM, and GRU
+
+Recurrent layers are designed for sequential data, such as text, time series, or audio, where the order of elements matters and information from earlier steps in the sequence should influence how later steps are processed.
+
+Vanilla RNN
+
+The simplest recurrent layer maintains a hidden state that is updated at each time step based on the current input and the previous hidden state.
+
+import torch
+import torch.nn as nn
+
+rnn = nn.RNN(input_size=10, hidden_size=20, num_layers=1, batch_first=True)
+
+x = torch.randn(5, 3, 10)  # (batch, sequence_length, input_size)
+output, hidden = rnn(x)
+print(output.shape)   # output at every time step
+print(hidden.shape)   # final hidden state
+
+Output:
+torch.Size([5, 3, 20])
+torch.Size([1, 5, 20])
+
+Vanilla RNNs suffer from the vanishing gradient problem over long sequences, making it difficult for the network to learn dependencies between elements that are far apart in the sequence.
+
+LSTM
+
+Long Short-Term Memory (LSTM) networks address this with a gating mechanism (input, forget, and output gates) and a separate cell state that allows gradients to flow more effectively across many time steps.
+
+lstm = nn.LSTM(input_size=10, hidden_size=20, num_layers=1, batch_first=True)
+
+x = torch.randn(5, 3, 10)
+output, (hidden, cell) = lstm(x)
+print(output.shape)
+print(hidden.shape)
+print(cell.shape)
+
+Output:
+torch.Size([5, 3, 20])
+torch.Size([1, 5, 20])
+torch.Size([1, 5, 20])
+
+Note that LSTM returns both a hidden state and a cell state, unlike vanilla RNN which returns only a hidden state.
+
+GRU
+
+Gated Recurrent Units (GRU) simplify the LSTM design by combining the forget and input gates into a single "update gate," resulting in fewer parameters while often achieving comparable performance.
+
+gru = nn.GRU(input_size=10, hidden_size=20, num_layers=1, batch_first=True)
+
+x = torch.randn(5, 3, 10)
+output, hidden = gru(x)
+print(output.shape)
+print(hidden.shape)
+
+Output:
+torch.Size([5, 3, 20])
+torch.Size([1, 5, 20])
+
+batch_first Parameter
+
+By default, PyTorch's recurrent layers expect input of shape (sequence_length, batch, input_size). Setting batch_first=True changes the expected input shape to (batch, sequence_length, input_size), which is often more intuitive and consistent with other PyTorch layers. This is a common source of shape-mismatch bugs when porting code between different tutorials or codebases that don't use a consistent convention.
+
+Bidirectional Layers
+
+Any of these layers can be made bidirectional by passing bidirectional=True, which processes the sequence in both forward and backward directions and concatenates the results, often improving performance on tasks where future context matters (such as named entity recognition), at the cost of not being usable for real-time/streaming prediction.
+
+bilstm = nn.LSTM(input_size=10, hidden_size=20, bidirectional=True, batch_first=True)
+output, _ = bilstm(x)
+print(output.shape)
+
+Output:
+torch.Size([5, 3, 40])
+
+Note the output hidden size doubles to 40 because the forward and backward hidden states are concatenated.

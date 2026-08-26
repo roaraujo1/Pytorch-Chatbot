@@ -1,0 +1,73 @@
+# Source: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+# Title: Convolutional Layers (nn.Conv2d)
+# Last Verified: Nov 05, 2024
+
+Convolutional Layers
+
+Convolutional layers are the core building block of convolutional neural networks (CNNs), commonly used for image data. Unlike a fully connected linear layer, a convolutional layer applies a small learnable filter (kernel) across spatial regions of the input, allowing the network to detect local patterns like edges, textures, and shapes regardless of where they appear in the image.
+
+torch.nn.Conv2d applies a 2D convolution over an input signal composed of several input planes.
+
+import torch
+import torch.nn as nn
+
+conv_layer = nn.Conv2d(
+    in_channels=3,      # e.g. RGB image has 3 channels
+    out_channels=16,    # number of filters to learn
+    kernel_size=3,       # 3x3 filter
+    stride=1,
+    padding=1
+)
+
+input_tensor = torch.randn(1, 3, 32, 32)  # (batch, channels, height, width)
+output = conv_layer(input_tensor)
+print(output.shape)
+
+Output:
+torch.Size([1, 16, 32, 32])
+
+Key Parameters
+
+- in_channels: number of channels in the input (3 for RGB, 1 for grayscale)
+- out_channels: number of filters, which becomes the number of output channels
+- kernel_size: the spatial size of the filter window
+- stride: how far the filter moves at each step; larger stride reduces output spatial size
+- padding: how many pixels of zero-padding to add around the input, often used to preserve spatial dimensions
+
+Computing Output Size
+
+The output spatial dimension can be computed as:
+
+output_size = floor((input_size + 2*padding - kernel_size) / stride) + 1
+
+With padding=1, stride=1, and kernel_size=3, the output size matches the input size, which is a common configuration called "same" padding.
+
+Pooling Layers
+
+Convolutional layers are frequently paired with pooling layers, which downsample the spatial dimensions and reduce computation while retaining important features.
+
+pool = nn.MaxPool2d(kernel_size=2, stride=2)
+pooled_output = pool(output)
+print(pooled_output.shape)
+
+Output:
+torch.Size([1, 16, 16, 16])
+
+A Simple CNN Block
+
+class SimpleCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.fc = nn.Linear(32 * 8 * 8, 10)
+
+    def forward(self, x):
+        x = self.pool(torch.relu(self.conv1(x)))
+        x = self.pool(torch.relu(self.conv2(x)))
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+
+Note: When flattening feature maps before a linear layer, the flattened size must exactly match the output of the preceding convolutional and pooling stack, or PyTorch will raise a shape mismatch error at runtime. It is common practice to compute this by hand or run a dummy forward pass to confirm the shape before finalizing the linear layer's input size.

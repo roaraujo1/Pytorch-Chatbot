@@ -1,0 +1,67 @@
+# Source: https://pytorch.org/docs/stable/data.html#single-and-multi-process-data-loading
+# Title: DataLoader Performance Tuning
+# Last Verified: Nov 05, 2024
+
+DataLoader Performance Tuning
+
+A poorly configured DataLoader is one of the most common causes of slow training, since it can leave an expensive GPU sitting idle while waiting for the next batch of data to be loaded and preprocessed on the CPU. Several DataLoader parameters directly affect this.
+
+num_workers
+
+By default, DataLoader loads data in the main process, which means data loading and model training compete for the same CPU resources and cannot overlap. Setting num_workers > 0 spawns separate worker processes that load and preprocess data in parallel, ideally staying ahead of the GPU's consumption rate.
+
+from torch.utils.data import DataLoader
+
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=64,
+    shuffle=True,
+    num_workers=4
+)
+
+There's no universally correct value for num_workers; it depends on the number of CPU cores available, how expensive the per-sample preprocessing is, and the batch size. A common starting point is to set it to the number of CPU cores, then adjust based on profiling, since too many workers can cause diminishing returns or even slow things down due to process management overhead.
+
+pin_memory
+
+When training on GPU, setting pin_memory=True allocates the batches in page-locked ("pinned") host memory, which allows faster, asynchronous transfer to the GPU compared to regular pageable memory.
+
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=64,
+    num_workers=4,
+    pin_memory=True
+)
+
+# combined with non_blocking=True on .to(), this allows the CPU-to-GPU
+# transfer to overlap with other computation
+for data, target in train_loader:
+    data = data.to("cuda", non_blocking=True)
+    target = target.to("cuda", non_blocking=True)
+
+pin_memory has no effect (and adds unnecessary overhead) when training on CPU only.
+
+persistent_workers
+
+By default, worker processes are shut down and restarted at the end of every epoch, which has real overhead if worker startup (e.g. loading large lookup tables or models inside each worker) is expensive. Setting persistent_workers=True keeps workers alive between epochs.
+
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=64,
+    num_workers=4,
+    persistent_workers=True
+)
+
+prefetch_factor
+
+Controls how many batches each worker preloads in advance. The default is usually reasonable, but increasing it can help if there's enough spare CPU memory and the GPU is still occasionally starved for data.
+
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=64,
+    num_workers=4,
+    prefetch_factor=4
+)
+
+Diagnosing Data Loading Bottlenecks
+
+The clearest sign of a DataLoader bottleneck is low GPU utilization (visible via nvidia-smi or the profiler) despite the model and batch size being large enough that the GPU should be busy. If profiling (see the section on profiling with torch.profiler) shows significant time spent waiting rather than computing, increasing num_workers, enabling pin_memory, or simplifying expensive per-sample transforms (such as moving them to run once ahead of time rather than on every epoch) are the usual first steps, rather than trying to optimize the model architecture itself.

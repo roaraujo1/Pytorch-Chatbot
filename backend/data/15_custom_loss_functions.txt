@@ -1,0 +1,68 @@
+# Source: https://pytorch.org/docs/stable/notes/extending.html
+# Title: Writing Custom Loss Functions
+# Last Verified: Nov 05, 2024
+
+Writing Custom Loss Functions
+
+While PyTorch provides many built-in loss functions such as nn.MSELoss, nn.CrossEntropyLoss, and nn.NLLLoss, many real-world problems require a custom loss function tailored to the specific task, such as combining multiple objectives or implementing a loss from a research paper that isn't built into the library.
+
+Simple Function-Based Loss
+
+The simplest way to define a custom loss is as a plain Python function that takes predictions and targets and returns a scalar tensor.
+
+import torch
+
+def custom_mse_with_penalty(predictions, targets, weight_penalty=0.01, model=None):
+    mse = torch.mean((predictions - targets) ** 2)
+    if model is not None:
+        l2_reg = sum(p.pow(2).sum() for p in model.parameters())
+        return mse + weight_penalty * l2_reg
+    return mse
+
+This works because any composition of differentiable PyTorch operations automatically supports autograd; there's no need to manually implement a backward pass as long as you're only using existing tensor operations.
+
+Class-Based Loss (nn.Module subclass)
+
+For losses with learnable parameters, internal state, or that need to integrate cleanly with model.to(device) calls, it's common to subclass nn.Module instead.
+
+import torch.nn as nn
+
+class FocalLoss(nn.Module):
+    """Focal Loss, useful for class-imbalanced classification tasks."""
+    def __init__(self, gamma=2.0, alpha=0.25):
+        super().__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+
+    def forward(self, inputs, targets):
+        bce_loss = nn.functional.binary_cross_entropy_with_logits(
+            inputs, targets, reduction='none'
+        )
+        probs = torch.sigmoid(inputs)
+        p_t = probs * targets + (1 - probs) * (1 - targets)
+        focal_weight = (1 - p_t) ** self.gamma
+        loss = self.alpha * focal_weight * bce_loss
+        return loss.mean()
+
+Usage:
+
+criterion = FocalLoss(gamma=2.0)
+predictions = torch.randn(8, 1, requires_grad=True)
+targets = torch.randint(0, 2, (8, 1)).float()
+loss = criterion(predictions, targets)
+loss.backward()
+
+Combining Multiple Loss Terms
+
+It's common in more complex models (such as multi-task learning or GANs) to combine several loss terms with different weights.
+
+def combined_loss(pred, target, aux_pred, aux_target, main_weight=1.0, aux_weight=0.3):
+    main_loss = nn.functional.cross_entropy(pred, target)
+    aux_loss = nn.functional.mse_loss(aux_pred, aux_target)
+    return main_weight * main_loss + aux_weight * aux_loss
+
+Numerical Stability
+
+Custom losses that involve operations like log() or division are prone to numerical instability, particularly when predictions approach 0 or 1 in probability space. PyTorch's built-in functions like binary_cross_entropy_with_logits are preferred over manually computing sigmoid followed by log, because the combined operation is implemented in a numerically stable way that avoids computing log(0).
+
+A poorly written custom loss can silently produce NaN gradients partway through training, which can be difficult to diagnose. Setting torch.autograd.set_detect_anomaly(True) during debugging can help pinpoint exactly which operation in a custom loss first produces a NaN or Inf value, though it adds overhead and should be disabled for actual training runs.

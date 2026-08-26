@@ -1,0 +1,65 @@
+# Source: https://pytorch.org/docs/stable/jit.html
+# Title: TorchScript: Serializing and Optimizing Models for Deployment
+# Last Verified: Nov 05, 2024
+
+TorchScript
+
+TorchScript is a way to create serializable and optimizable models from PyTorch code. Any TorchScript program can be saved from a Python process and loaded in a process where there is no Python dependency, such as a C++ production server, which makes it a common tool for deploying PyTorch models outside of a Python environment.
+
+Two Conversion Methods
+
+There are two ways to convert a PyTorch nn.Module into TorchScript: tracing and scripting.
+
+Tracing
+
+torch.jit.trace runs the model once with example input, recording every operation that gets executed, and produces a static graph based on that single execution.
+
+import torch
+
+model = MyModel()
+model.eval()
+
+example_input = torch.randn(1, 3, 224, 224)
+traced_model = torch.jit.trace(model, example_input)
+
+traced_model.save("model_traced.pt")
+
+Tracing is simple but has an important limitation: it only captures the specific execution path taken with the example input. Any data-dependent control flow, such as an if statement that branches based on a tensor's value, will be "baked in" based on whatever branch was taken during tracing, and will not correctly generalize to inputs that should take a different branch.
+
+Scripting
+
+torch.jit.script instead directly analyzes the Python source code of the model, including control flow like if statements and for loops, and compiles it into TorchScript. This correctly preserves data-dependent control flow, at the cost of requiring the model's code to be written using a subset of Python that the TorchScript compiler can understand (dynamic typing, some Python built-ins, and third-party libraries not supported by autograd may cause scripting to fail).
+
+scripted_model = torch.jit.script(model)
+scripted_model.save("model_scripted.pt")
+
+class ModelWithControlFlow(nn.Module):
+    def forward(self, x):
+        if x.sum() > 0:
+            return x * 2
+        else:
+            return x * -1
+
+# tracing this would only capture one branch; scripting captures both
+scripted = torch.jit.script(ModelWithControlFlow())
+
+Loading a TorchScript Model (No Python Required)
+
+Once saved, a TorchScript model can be loaded and run from C++ using LibTorch, without any Python runtime:
+
+// C++ example (not Python)
+#include <torch/script.h>
+
+torch::jit::script::Module module = torch::jit::load("model_scripted.pt");
+
+It can also, of course, still be loaded back in Python:
+
+loaded_model = torch.jit.load("model_scripted.pt")
+loaded_model.eval()
+output = loaded_model(example_input)
+
+When to Use Tracing vs. Scripting
+
+As a general rule: use tracing for simple feedforward models with no data-dependent control flow, since it "just works" with minimal code changes. Use scripting for models containing loops or conditionals that depend on tensor values (common in RNNs, or models with early-exit logic). Some codebases mix both approaches, tracing the majority of a model while scripting specific submodules that contain control flow.
+
+A common deployment bug is tracing a model that happens to contain a hidden conditional (for example, inside a library function it calls) without realizing it, resulting in a traced model that behaves correctly on the traced input shape or batch size but silently produces wrong results on inputs that should trigger a different code path.

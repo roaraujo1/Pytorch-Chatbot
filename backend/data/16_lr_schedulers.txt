@@ -1,0 +1,72 @@
+# Source: https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+# Title: Learning Rate Schedulers
+# Last Verified: Nov 05, 2024
+
+Learning Rate Schedulers
+
+A fixed learning rate throughout training is rarely optimal. Early in training, a larger learning rate helps the model make fast progress; later, a smaller learning rate helps it settle into a good minimum without overshooting. torch.optim.lr_scheduler provides several strategies for adjusting the learning rate over the course of training.
+
+Basic Usage Pattern
+
+All schedulers wrap an existing optimizer and are stepped once per epoch (or, for some schedulers, once per batch).
+
+import torch
+from torch import nn, optim
+
+model = nn.Linear(10, 1)
+optimizer = optim.SGD(model.parameters(), lr=0.1)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+
+for epoch in range(100):
+    # train_one_epoch(model, optimizer, ...)
+    scheduler.step()
+    print(f"Epoch {epoch}, LR: {scheduler.get_last_lr()}")
+
+StepLR
+
+Decays the learning rate by a factor of gamma every step_size epochs. In the example above, the learning rate drops from 0.1 to 0.01 after epoch 30, and to 0.001 after epoch 60.
+
+ReduceLROnPlateau
+
+Unlike schedulers that follow a fixed schedule, ReduceLROnPlateau reduces the learning rate when a monitored metric (typically validation loss) stops improving. This is especially useful when you don't know in advance how many epochs training will need.
+
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+
+for epoch in range(100):
+    # train_one_epoch(...)
+    val_loss = validate(model)
+    scheduler.step(val_loss)  # note: pass the metric, not called with no args
+
+Note that ReduceLROnPlateau's step() method requires the monitored metric as an argument, unlike most other schedulers, which is a common source of bugs when switching between scheduler types.
+
+CosineAnnealingLR
+
+Follows a cosine curve, smoothly decaying the learning rate from its initial value down to near zero (or a specified minimum) over a set number of epochs, then optionally restarting. This tends to produce smoother convergence than step-based decay.
+
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-6)
+
+OneCycleLR
+
+A popular scheduler for fast training that increases the learning rate from a low value up to a maximum over roughly the first 30% of training, then anneals it back down for the remainder. This is often paired with a much higher-than-usual peak learning rate.
+
+scheduler = optim.lr_scheduler.OneCycleLR(
+    optimizer, max_lr=0.01, total_steps=len(train_dataloader) * epochs
+)
+
+# OneCycleLR is typically stepped once per batch, not per epoch:
+for batch in train_dataloader:
+    # training step
+    optimizer.step()
+    scheduler.step()
+
+Warmup
+
+Many modern training recipes, especially for transformers, use a "warmup" period where the learning rate increases linearly from zero over the first few hundred or thousand steps, before switching to a decay schedule. This is often implemented by chaining a LinearLR warmup scheduler with a main scheduler using SequentialLR.
+
+warmup = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, total_iters=500)
+main_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=9500)
+scheduler = optim.lr_scheduler.SequentialLR(
+    optimizer, schedulers=[warmup, main_scheduler], milestones=[500]
+)
+
+A common mistake is calling scheduler.step() before optimizer.step() in the same iteration; PyTorch emits a warning if this order is violated, since it can cause the very first learning rate value to be skipped.

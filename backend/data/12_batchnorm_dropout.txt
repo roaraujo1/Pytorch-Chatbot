@@ -1,0 +1,63 @@
+# Source: https://pytorch.org/docs/stable/generated/torch.nn.BatchNorm2d.html
+# Title: Batch Normalization and Dropout
+# Last Verified: Nov 05, 2024
+
+Batch Normalization and Dropout
+
+Batch Normalization and Dropout are two of the most widely used regularization and training-stabilization techniques in deep learning. Both are commonly inserted between layers in a neural network, but they solve different problems and behave differently during training versus evaluation.
+
+Batch Normalization
+
+Batch normalization normalizes the inputs to a layer across a mini-batch, so that each channel's activations have roughly zero mean and unit variance before being scaled and shifted by learnable parameters. This helps stabilize and speed up training, and can reduce sensitivity to weight initialization.
+
+import torch
+import torch.nn as nn
+
+bn_layer = nn.BatchNorm2d(num_features=16)  # matches out_channels of preceding conv layer
+
+x = torch.randn(8, 16, 32, 32)  # (batch, channels, height, width)
+output = bn_layer(x)
+print(output.shape)
+
+Output:
+torch.Size([8, 16, 32, 32])
+
+During training, BatchNorm computes statistics (mean, variance) from the current mini-batch. During evaluation, it uses running estimates accumulated during training instead. This is why calling model.eval() before inference is critical for any model containing BatchNorm layers; forgetting to do so will use batch statistics from whatever batch size is passed at inference time, which can produce inconsistent or degraded results, especially with a batch size of 1.
+
+Dropout
+
+Dropout randomly zeroes a fraction of the elements of the input tensor during training, with the remaining elements scaled up to preserve the expected sum. This prevents the network from relying too heavily on any single neuron, encouraging redundancy and reducing overfitting.
+
+dropout_layer = nn.Dropout(p=0.5)  # zero out 50% of activations during training
+
+x = torch.ones(1, 10)
+output = dropout_layer(x)
+print(output)
+
+Output (varies by random seed):
+tensor([[2., 0., 2., 2., 0., 0., 2., 2., 0., 2.]])
+
+Note that the surviving values are scaled by 1/(1-p) so that the expected sum of the output matches the input; this is sometimes called "inverted dropout."
+
+Like BatchNorm, Dropout behaves differently in train versus eval mode. During evaluation, Dropout does nothing and simply passes the input through unchanged. This is another reason model.train() and model.eval() must be set correctly before the corresponding phase.
+
+Common Placement
+
+A typical block combining both might look like:
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.25)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        return x
+
+A common mistake is forgetting that both layers are order-sensitive: BatchNorm is almost always applied before the activation function, while Dropout is typically applied after.

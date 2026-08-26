@@ -1,0 +1,61 @@
+# Source: https://pytorch.org/docs/stable/quantization.html
+# Title: Model Quantization
+# Last Verified: Nov 05, 2024
+
+Model Quantization
+
+Quantization reduces the numerical precision of a model's weights and activations, typically from 32-bit floating point down to 8-bit integers, in order to shrink model size and speed up inference, particularly on CPU or edge devices where lower-precision integer arithmetic is significantly faster than floating point.
+
+Why Quantize
+
+A quantized int8 model is roughly 4x smaller on disk than its float32 counterpart, and int8 matrix multiplication can run substantially faster on hardware with dedicated integer arithmetic support. This makes quantization especially valuable for deploying models to mobile devices, embedded systems, or any environment where inference latency or memory footprint is a hard constraint, at the cost of some accuracy loss compared to the original full-precision model.
+
+Post-Training Dynamic Quantization
+
+The simplest form of quantization converts weights to int8 ahead of time, while activations are quantized dynamically at runtime during inference. This requires no retraining and no calibration data, making it the easiest quantization technique to apply.
+
+import torch
+
+model = MyModel()
+model.eval()
+
+quantized_model = torch.quantization.quantize_dynamic(
+    model,
+    {torch.nn.Linear},  # specify which layer types to quantize
+    dtype=torch.qint8
+)
+
+Dynamic quantization works particularly well for models dominated by Linear layers, such as many NLP models, but is less effective for convolutional networks, since dynamic quantization of Conv layers is not as well supported.
+
+Post-Training Static Quantization
+
+Static quantization quantizes both weights and activations ahead of time, which requires running a small amount of representative "calibration" data through the model first, so that appropriate activation ranges can be determined. This generally achieves better performance than dynamic quantization but requires more setup.
+
+model.eval()
+model.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+torch.quantization.prepare(model, inplace=True)
+
+# run calibration data through the model
+with torch.no_grad():
+    for data, _ in calibration_dataloader:
+        model(data)
+
+torch.quantization.convert(model, inplace=True)
+
+Quantization-Aware Training (QAT)
+
+For cases where post-training quantization causes too much accuracy loss, quantization-aware training simulates the effects of quantization during training itself, inserting "fake quantization" operations that mimic int8 rounding while still using floating point for the actual gradient computation. This allows the model to adapt its weights to be more robust to the precision loss that will occur at actual inference time, generally producing the best accuracy of the three approaches, at the cost of requiring a full (or partial) retraining run.
+
+model.train()
+model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')
+torch.quantization.prepare_qat(model, inplace=True)
+
+# train as normal for some number of epochs
+# ...
+
+model.eval()
+quantized_model = torch.quantization.convert(model, inplace=False)
+
+Choosing an Approach
+
+As a rule of thumb: try dynamic quantization first, since it's essentially free to apply. If accuracy loss is acceptable but more speed is needed, move to static quantization. If static quantization causes unacceptable accuracy degradation, quantization-aware training is the most involved but most accurate option.

@@ -1,0 +1,59 @@
+# Source: https://pytorch.org/tutorials/beginner/blitz/data_parallel_tutorial.html
+# Title: Multi-GPU Training with DataParallel
+# Last Verified: Nov 05, 2024
+
+Multi-GPU Training with DataParallel
+
+When a single machine has multiple GPUs, torch.nn.DataParallel provides the simplest way to parallelize training across them, though it has largely been superseded by DistributedDataParallel (DDP) for serious multi-GPU work, for reasons explained below.
+
+Basic Usage
+
+import torch
+import torch.nn as nn
+
+model = MyModel()
+
+if torch.cuda.device_count() > 1:
+    print(f"Using {torch.cuda.device_count()} GPUs")
+    model = nn.DataParallel(model)
+
+model = model.to("cuda")
+
+How DataParallel Works
+
+DataParallel splits each input batch into smaller sub-batches, one per available GPU, and copies the model onto every GPU. Each GPU computes a forward and backward pass independently on its sub-batch, and the resulting gradients are gathered back to the primary GPU (device 0 by default), averaged, and used to update the model, which is then re-broadcast to all GPUs for the next step.
+
+# from the training loop's perspective, nothing changes:
+for data, target in train_dataloader:
+    data, target = data.to("cuda"), target.to("cuda")
+    output = model(data)  # data automatically split across GPUs internally
+    loss = loss_fn(output, target)
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+
+Limitations of DataParallel
+
+DataParallel has several well-known drawbacks:
+
+- It uses a single Python process with multiple threads, which is limited by Python's Global Interpreter Lock (GIL) and doesn't scale as efficiently as true multi-process parallelism.
+- The primary GPU (device 0) does disproportionately more work than the others, since it's responsible for gathering outputs, computing the loss, and averaging gradients, which can create a bottleneck and uneven memory usage across GPUs.
+- It only supports single-machine, multi-GPU setups, not multi-machine training.
+
+Why DistributedDataParallel (DDP) is Preferred
+
+DistributedDataParallel launches a separate process per GPU, avoiding the GIL bottleneck entirely, and distributes gradient synchronization more evenly across all processes rather than funneling everything through one GPU. DDP also scales to multi-machine training, making it the standard choice for any serious multi-GPU training setup, including single-node multi-GPU training where DataParallel might seem like the simpler option at first glance.
+
+A minimal DDP setup requires launching the training script once per GPU (typically via torchrun), initializing a process group, and wrapping the model:
+
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+dist.init_process_group(backend="nccl")
+local_rank = int(os.environ["LOCAL_RANK"])
+torch.cuda.set_device(local_rank)
+
+model = MyModel().to(local_rank)
+model = DDP(model, device_ids=[local_rank])
+
+Setting up DDP correctly involves more moving parts (process groups, distributed samplers, launch scripts) than DataParallel's single-line wrapper, which is why DataParallel remains common in quick prototyping and tutorials, despite DDP being the recommended approach for any training run where performance matters.

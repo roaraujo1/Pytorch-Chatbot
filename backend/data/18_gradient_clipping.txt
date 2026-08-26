@@ -1,0 +1,48 @@
+# Source: https://pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_norm_.html
+# Title: Gradient Clipping
+# Last Verified: Nov 05, 2024
+
+Gradient Clipping
+
+During training, especially with recurrent networks or transformers, gradients can occasionally become very large, causing a single bad update to destabilize the entire model (a phenomenon sometimes called the "exploding gradient" problem). Gradient clipping caps the magnitude of gradients before the optimizer applies them, preventing this kind of instability.
+
+Clipping by Norm
+
+The most common approach clips the total norm of all gradients (across all parameters, treated as one big vector) to a maximum value.
+
+import torch
+import torch.nn as nn
+
+model = nn.LSTM(10, 20)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+# inside the training loop, after loss.backward() and before optimizer.step():
+loss.backward()
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+optimizer.step()
+optimizer.zero_grad()
+
+clip_grad_norm_ computes the norm over all gradients combined, and if that norm exceeds max_norm, it scales down every gradient proportionally so the resulting total norm equals max_norm. This preserves the relative direction of the gradient while limiting its magnitude, which is generally preferable to more naive approaches.
+
+Clipping by Value
+
+An alternative, less commonly recommended, approach clips each individual gradient element independently to a fixed range.
+
+torch.nn.utils.clip_grad_value_(model.parameters(), clip_value=0.5)
+
+This clamps every gradient element to the range [-0.5, 0.5] independently, which can distort the gradient's direction more than norm-based clipping, since different parameters get scaled by different implicit factors.
+
+Choosing max_norm
+
+There's no universal correct value for max_norm; it's typically treated as a hyperparameter and commonly set somewhere between 0.5 and 5.0 for transformer and RNN training, though the right value depends heavily on the model architecture, batch size, and learning rate. A very small max_norm can slow convergence by artificially limiting how much the model can learn from a single batch, while a very large one provides little protection against instability.
+
+Common Placement Mistake
+
+Gradient clipping must be called after loss.backward() (so gradients exist to clip) and before optimizer.step() (so the clipped gradients, not the original ones, are what get applied). Calling clip_grad_norm_ before backward(), or after optimizer.step(), has no meaningful effect and is a common bug when gradient clipping is added to existing training code without carefully checking the surrounding order of operations.
+
+Monitoring Gradient Norms
+
+It's often useful to log the pre-clipping gradient norm during training, since a norm that is very frequently far above max_norm can indicate an underlying training instability (bad learning rate, bad initialization, or a data issue) that clipping is merely masking rather than solving.
+
+total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+print(f"Pre-clip gradient norm: {total_norm:.4f}")

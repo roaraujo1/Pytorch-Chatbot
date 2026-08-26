@@ -1,0 +1,61 @@
+# Source: https://pytorch.org/docs/stable/generated/torch.nn.Embedding.html
+# Title: Embedding Layers
+# Last Verified: Nov 05, 2024
+
+Embedding Layers
+
+An embedding layer maps discrete inputs, such as word indices in a vocabulary, to dense continuous vectors. This is a foundational component in almost every NLP model, including transformers, because raw integer token IDs carry no meaningful numeric relationship to each other, while learned embedding vectors can capture semantic similarity.
+
+import torch
+import torch.nn as nn
+
+vocab_size = 1000
+embedding_dim = 64
+
+embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=embedding_dim)
+
+# a batch of token index sequences
+token_ids = torch.tensor([[1, 5, 20, 999], [42, 0, 3, 7]])
+embedded = embedding(token_ids)
+print(embedded.shape)
+
+Output:
+torch.Size([2, 4, 64])
+
+Internally, nn.Embedding is essentially a lookup table: a weight matrix of shape (vocab_size, embedding_dim), where row i is the vector for token index i. Looking up a token's embedding is just indexing into this matrix, which is why it is far more efficient than representing tokens as one-hot vectors and multiplying by a dense weight matrix, even though the two are mathematically equivalent.
+
+print(embedding.weight.shape)
+
+Output:
+torch.Size([1000, 64])
+
+Padding Index
+
+Sequences in a batch often need to be padded to a common length. Passing padding_idx tells the embedding layer to treat a specific index as padding, and its gradient will not be updated during training.
+
+embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=64, padding_idx=0)
+
+Pretrained Embeddings
+
+It's common to initialize an embedding layer with pretrained vectors (such as Word2Vec or GloVe) rather than training from scratch, especially with limited training data.
+
+pretrained_weights = torch.randn(vocab_size, embedding_dim)  # normally loaded from a file
+embedding = nn.Embedding.from_pretrained(pretrained_weights, freeze=True)
+
+Setting freeze=True keeps the pretrained vectors fixed during training; setting it to False allows them to be fine-tuned along with the rest of the model.
+
+Embeddings in Transformer Architectures
+
+In transformer-based models, token embeddings are typically summed with positional embeddings before being passed into the attention layers, since the attention mechanism itself has no inherent sense of sequence order.
+
+token_embedding = nn.Embedding(vocab_size, embedding_dim)
+position_embedding = nn.Embedding(max_sequence_length := 512, embedding_dim)
+
+positions = torch.arange(0, token_ids.size(1)).unsqueeze(0)
+combined = token_embedding(token_ids) + position_embedding(positions)
+print(combined.shape)
+
+Output:
+torch.Size([2, 4, 64])
+
+A common bug when working with embeddings is passing a token index that is out of range for num_embeddings, which raises an IndexError at runtime rather than failing at model construction time; it's good practice to validate vocabulary size against your tokenizer before training.

@@ -1,0 +1,65 @@
+# Source: https://pytorch.org/tutorials/beginner/transfer_learning_tutorial.html
+# Title: Transfer Learning
+# Last Verified: Nov 05, 2024
+
+Transfer Learning
+
+Transfer learning takes a model that has already been trained on a large dataset (such as ImageNet for vision, or a large text corpus for NLP) and adapts it to a new, often smaller, task-specific dataset, rather than training a model from random initialization. This is one of the most practically important techniques in modern deep learning, since it can dramatically reduce the amount of labeled data and compute needed to reach good performance on a new task.
+
+Loading a Pretrained Model
+
+torchvision.models provides many pretrained architectures out of the box.
+
+import torch
+import torch.nn as nn
+from torchvision import models
+
+model = models.resnet18(weights="IMAGENET1K_V1")
+
+Two Common Strategies
+
+There are two main approaches to transfer learning: feature extraction and fine-tuning.
+
+Feature Extraction
+
+In feature extraction, the pretrained model's weights are frozen (not updated during training), and only a new final layer (matching the number of classes in the new task) is trained. This is fast and requires little data, since most of the network is not being retrained.
+
+for param in model.parameters():
+    param.requires_grad = False
+
+# replace the final layer with one matching the new number of classes
+num_classes = 10
+model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+# only model.fc.parameters() have requires_grad=True at this point,
+# so only the new layer will be updated during training
+optimizer = torch.optim.Adam(model.fc.parameters(), lr=1e-3)
+
+Fine-Tuning
+
+In fine-tuning, some or all of the pretrained model's layers are unfrozen and updated during training, typically using a smaller learning rate than would be used for training from scratch, since the pretrained weights are already close to a good solution and large updates risk destroying that.
+
+model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+# unfreeze everything for fine-tuning
+for param in model.parameters():
+    param.requires_grad = True
+
+# note the smaller learning rate compared to typical from-scratch training
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+
+Choosing Between the Two
+
+Feature extraction is generally preferred when the new dataset is small and similar to the original pretraining dataset, since there's a real risk of overfitting if too many parameters are unfrozen with too little data. Fine-tuning tends to work better when more data is available, or when the new task differs meaningfully from the original pretraining domain, since it allows earlier layers to adapt as well, not just the final classification layer.
+
+A common middle ground is to freeze early layers (which tend to learn generic, broadly reusable features like edges and textures in vision models) while unfreezing and fine-tuning only the later layers (which tend to learn more task-specific, abstract features).
+
+for name, param in model.named_parameters():
+    if "layer4" in name or "fc" in name:  # unfreeze only the last block and final layer
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+
+Learning Rate Considerations
+
+Because pretrained weights are already in a reasonable region of the loss landscape, using a learning rate that's too high during fine-tuning can quickly destroy the useful features the model learned during pretraining, a phenomenon sometimes informally called "catastrophic forgetting." It's common practice to use a learning rate roughly one or two orders of magnitude smaller for fine-tuning than would be used when training the same architecture from scratch.

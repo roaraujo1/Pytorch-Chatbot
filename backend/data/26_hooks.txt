@@ -1,0 +1,76 @@
+# Source: https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_forward_hook
+# Title: Forward and Backward Hooks
+# Last Verified: Nov 05, 2024
+
+Forward and Backward Hooks
+
+Hooks are a mechanism in PyTorch that let you register a function to be called automatically at specific points during a model's forward or backward pass, without modifying the model's own code. They're commonly used for debugging, visualization, feature extraction, and gradient manipulation.
+
+Forward Hooks
+
+A forward hook is called every time forward() is executed on the module it's registered to, and receives the module, its input, and its output.
+
+import torch
+import torch.nn as nn
+
+activations = {}
+
+def get_activation(name):
+    def hook(module, input, output):
+        activations[name] = output.detach()
+    return hook
+
+model = nn.Sequential(
+    nn.Linear(10, 20),
+    nn.ReLU(),
+    nn.Linear(20, 5)
+)
+
+model[1].register_forward_hook(get_activation("relu_output"))
+
+x = torch.randn(1, 10)
+output = model(x)
+print(activations["relu_output"].shape)
+
+Output:
+torch.Size([1, 20])
+
+This pattern is commonly used to extract intermediate feature maps from a pretrained model (for example, extracting features from an intermediate layer of a CNN for use in a downstream task) without needing to modify or subclass the original model.
+
+Forward Pre-Hooks
+
+A forward pre-hook runs before forward() is called, and can be used to inspect or even modify the input before it reaches the layer.
+
+def pre_hook(module, input):
+    print(f"About to run forward with input shape: {input[0].shape}")
+
+model[0].register_forward_pre_hook(pre_hook)
+
+Backward Hooks
+
+A backward hook (register_full_backward_hook) runs during the backward pass and receives the gradients with respect to the module's input and output, which is useful for inspecting or clipping gradients at specific points in the network, or diagnosing vanishing/exploding gradients layer by layer.
+
+def backward_hook(module, grad_input, grad_output):
+    print(f"Gradient output norm: {grad_output[0].norm()}")
+
+model[0].register_full_backward_hook(backward_hook)
+
+loss = output.sum()
+loss.backward()
+
+Removing Hooks
+
+Hooks remain registered until explicitly removed, which is important to remember in long-running processes or notebooks, since forgetting to remove a hook can cause it to keep firing (and potentially accumulating memory via closures) long after its intended use.
+
+handle = model[1].register_forward_hook(get_activation("relu_output"))
+# ... use the hook ...
+handle.remove()  # cleans up the hook
+
+Common Use Cases
+
+- Extracting intermediate activations for visualization (e.g. Grad-CAM style saliency maps)
+- Implementing gradient clipping or gradient noise at a specific layer, rather than globally
+- Debugging NaN or exploding values by checking output magnitudes layer by layer
+- Feature extraction from pretrained backbones without modifying the original model class
+
+Hooks are a somewhat advanced tool, and overusing them (registering many hooks throughout a large model) can noticeably slow down both forward and backward passes, since each hook adds Python-level overhead at every invocation; they are best used for targeted debugging or feature extraction rather than as a permanent part of a production training loop.

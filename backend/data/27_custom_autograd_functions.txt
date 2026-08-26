@@ -1,0 +1,71 @@
+# Source: https://pytorch.org/docs/stable/notes/extending.html#extending-torch-autograd
+# Title: Writing Custom Autograd Functions
+# Last Verified: Nov 05, 2024
+
+Writing Custom Autograd Functions
+
+For most models, composing existing PyTorch operations (which already have autograd support) is sufficient, and there's no need to write a custom backward pass. However, in some cases, such as implementing a novel mathematical operation, wrapping a non-differentiable external library call, or manually optimizing memory usage for a specific operation, it's necessary to define a custom torch.autograd.Function with an explicit forward and backward implementation.
+
+Basic Structure
+
+A custom autograd Function subclasses torch.autograd.Function and implements two static methods: forward, which computes the output, and backward, which computes the gradient of the loss with respect to the function's inputs, given the gradient with respect to its output.
+
+import torch
+
+class SquareFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        ctx.save_for_backward(input)
+        return input ** 2
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, = ctx.saved_tensors
+        grad_input = grad_output * 2 * input
+        return grad_input
+
+# usage
+square = SquareFunction.apply
+x = torch.tensor([2.0, 3.0], requires_grad=True)
+y = square(x)
+y.sum().backward()
+print(x.grad)
+
+Output:
+tensor([4., 6.])
+
+This example is simplistic (torch.pow already does this efficiently), but it illustrates the core pattern used for genuinely custom operations.
+
+The ctx Object
+
+The ctx (context) object is used to save any information from the forward pass that will be needed to compute gradients in the backward pass, most commonly using ctx.save_for_backward() for tensors. This avoids needing to recompute or separately store intermediate values, and integrates properly with PyTorch's memory management, unlike simply storing tensors as instance attributes.
+
+A More Realistic Example: Straight-Through Estimator
+
+A common real-world use case for custom autograd Functions is implementing operations that are not differentiable in the mathematical sense but need an approximate gradient for training purposes, such as a hard threshold function used with the straight-through estimator technique (common in quantization-aware training and discrete latent variable models).
+
+class BinarizeSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        # forward pass: hard threshold, not differentiable
+        return (input > 0).float()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # backward pass: pretend the forward was the identity function
+        # (this is the "straight-through" part)
+        return grad_output
+
+binarize = BinarizeSTE.apply
+
+Verifying Correctness with gradcheck
+
+Because a hand-written backward implementation is easy to get subtly wrong, PyTorch provides torch.autograd.gradcheck, which numerically estimates the gradient (via finite differences) and compares it against the analytical gradient produced by your backward() implementation.
+
+from torch.autograd import gradcheck
+
+input = torch.randn(4, dtype=torch.double, requires_grad=True)  # double precision for numerical stability
+test = gradcheck(SquareFunction.apply, (input,), eps=1e-6, atol=1e-4)
+print(f"Gradient check passed: {test}")
+
+Note that gradcheck requires double precision (torch.double) inputs, since float32 doesn't have enough numerical precision for the finite-difference approximation to be reliably accurate, and it can be slow for large inputs since it must run the forward pass many times, so it's typically used only as a one-time correctness check during development, not as part of the regular training loop.

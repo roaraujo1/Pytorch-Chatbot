@@ -1,0 +1,60 @@
+# Source: https://pytorch.org/docs/stable/notes/amp_examples.html
+# Title: Automatic Mixed Precision (AMP) Training
+# Last Verified: Nov 05, 2024
+
+Automatic Mixed Precision (AMP) Training
+
+Automatic Mixed Precision training uses a combination of 16-bit (half precision) and 32-bit (full precision) floating point types during training, rather than using 32-bit precision everywhere. This can significantly reduce memory usage and speed up training on modern GPUs, often with little to no loss in model accuracy, because certain operations (like large matrix multiplications) are numerically stable enough in lower precision, while others (like reductions and loss computation) still benefit from full precision.
+
+Basic AMP Training Loop
+
+import torch
+
+model = model.to("cuda")
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+scaler = torch.amp.GradScaler("cuda")
+
+for data, target in train_dataloader:
+    data, target = data.to("cuda"), target.to("cuda")
+    optimizer.zero_grad()
+
+    with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
+        output = model(data)
+        loss = loss_fn(output, target)
+
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
+
+Why a GradScaler is Needed
+
+Gradients computed in float16 can underflow to zero, especially for small values, since float16 has a much smaller representable range than float32. GradScaler addresses this by scaling the loss up by a large factor before backpropagation (so gradients are scaled up proportionally and stay representable in float16), then unscaling the gradients before the optimizer step. The scale factor is adjusted dynamically during training: if an overflow (inf or NaN gradient) is detected, the scale factor is reduced and that step is skipped; if training proceeds smoothly for a while, the scale factor is gradually increased again.
+
+What autocast Does
+
+Inside the autocast context, PyTorch automatically chooses which precision to use for each operation, based on a predetermined list of operations considered safe for float16 (e.g. convolutions, matrix multiplications) versus operations that should remain in float32 for numerical stability (e.g. softmax, batch normalization statistics, loss reduction). This means most model code doesn't need to be manually rewritten to specify precision.
+
+Combining with Gradient Clipping
+
+If gradient clipping is used alongside AMP, gradients must be unscaled before clipping, or the clip threshold will be applied to artificially inflated gradient values.
+
+scaler.scale(loss).backward()
+scaler.unscale_(optimizer)  # unscale before clipping
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+scaler.step(optimizer)
+scaler.update()
+
+bfloat16 as an Alternative
+
+On hardware that supports it (such as newer NVIDIA GPUs and TPUs), bfloat16 is often preferred over float16 because it has the same exponent range as float32 (avoiding the underflow issues that motivate GradScaler) at the cost of reduced precision (fewer mantissa bits). When using bfloat16, a GradScaler is typically unnecessary.
+
+with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+    output = model(data)
+    loss = loss_fn(output, target)
+
+loss.backward()
+optimizer.step()
+
+Common Pitfall
+
+Wrapping only the forward pass (model call and loss computation) in autocast, but not backward() or optimizer.step(), is the correct pattern; wrapping the entire training loop, including the backward pass, in autocast is unnecessary and can occasionally cause unexpected behavior with certain custom autograd functions.

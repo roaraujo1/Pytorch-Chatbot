@@ -1,0 +1,92 @@
+# Source: https://pytorch.org/docs/stable/notes/broadcasting.html
+# Title: Broadcasting Semantics
+# Last Verified: Nov 05, 2024
+
+Broadcasting Semantics
+
+Many PyTorch operations support NumPy's broadcasting semantics. In short, if a PyTorch operation supports broadcasting, its tensor arguments can be automatically expanded to be of equal sizes (without making copies of the data).
+
+General Semantics
+
+Two tensors are "broadcastable" if the following rules hold:
+
+- Each tensor has at least one dimension.
+- When iterating over the dimension sizes, starting at the trailing dimension, the dimension sizes must either be equal, one of them is 1, or one of them does not exist.
+
+For example:
+
+x = torch.empty(5,7,3)
+y = torch.empty(5,7,3)
+# same shapes are always broadcastable (i.e. the above rules always hold)
+
+x = torch.empty((0,))
+y = torch.empty(2,2)
+# x and y are not broadcastable, because x does not have at least 1 dimension
+
+# can line up trailing dimensions
+x = torch.empty(5,3,4,1)
+y = torch.empty(  3,1,1)
+# x and y are broadcastable.
+# 1st trailing dimension: both have size 1
+# 2nd trailing dimension: y has size 1
+# 3rd trailing dimension: x size == y size
+# 4th trailing dimension: y dimension doesn't exist
+
+# but:
+x = torch.empty(5,2,4,1)
+y = torch.empty(  3,1,1)
+# x and y are not broadcastable, because in the 3rd trailing dimension 2 != 3
+
+If two tensors x, y are "broadcastable", the resulting tensor size is calculated as follows:
+
+- If the number of dimensions of x and y are not equal, prepend 1 to the dimensions of the tensor with fewer dimensions to make them equal length.
+- Then, for each dimension size, the resulting dimension size is the max of the sizes of x and y along that dimension.
+
+Example:
+
+x = torch.empty(5,1,4,1)
+y = torch.empty(  3,1,1)
+(x+y).size()
+
+Output:
+torch.Size([5, 3, 4, 1])
+
+x = torch.empty(1)
+y = torch.empty(3,1,7)
+(x+y).size()
+
+Output:
+torch.Size([3, 1, 7])
+
+x = torch.empty(5,2,4,1)
+y = torch.empty(3,1,1)
+(x+y).size()
+
+Output:
+RuntimeError: The size of tensor a (2) must match the size of tensor b (3) at non-singleton dimension 1
+
+In-place Semantics
+
+One complication with in-place operations is that broadcasting does not change the size of the tensor being operated on in place. Rather, only the argument tensors are allowed to broadcast into the shape of the in-place target.
+
+x = torch.empty(5,3,4,1)
+y = torch.empty(3,1,1)
+(x.add_(y)).size()
+
+Output:
+torch.Size([5, 3, 4, 1])
+
+But:
+
+x = torch.empty(1,3,1)
+y = torch.empty(3,1,7)
+(x.add_(y)).size()
+
+Output:
+RuntimeError: The expanded size of the tensor (1) must match the existing size (7) at non-singleton dimension 2
+
+This fails because x is size (1,3,1), and the result of broadcasting x and y would need x to be size (3,1,7), but x cannot change size in place since it is the operand being written to.
+
+Common Pitfalls
+
+A frequent bug in neural network code involves accidentally broadcasting a tensor with an unintended shape, producing incorrect results silently rather than raising an error. For example, subtracting a column vector from a row vector produces a full outer-product-like matrix rather than element-wise subtraction, which can pass shape checks while being mathematically wrong. When debugging unexpected tensor shapes, always print .shape at each step rather than assuming broadcasting did what you expected.
